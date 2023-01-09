@@ -244,7 +244,8 @@ queens <-
   collect() |>
   filter(str_detect(citystatezip, 'Queens Village')) |>
   mutate(customerid = as.character(customerid)) |>
-  left_join(tbl(con, 'orders') |> collect(), by = 'customerid') |>
+  left_join(tbl(con, 'orders') |> collect(),
+            by = 'customerid') |>
   filter(!is.na(orderid)) |>
   left_join(items, by = 'orderid')
 
@@ -268,7 +269,7 @@ queens_and_bought_cat_product <-
 
 # anita koch. 315-492-7411
 
-
+rm(queens, items)
 
 
 ## Puzzle 6 ----------------------------------------------------
@@ -297,12 +298,14 @@ neg_profit_orders <-
 cheap_woman <-
   neg_profit_orders |>
   group_by(customerid, name, phone) |>
-  summarise(ave_cost = mean(profit), .groups = 'drop') |>
+  summarise(ave_cost = mean(profit, na.rm = TRUE),
+            .groups = 'drop') |>
   collect() |>
   arrange(ave_cost) |>
   head(1) |>
   glimpse()
 
+rm(neg_profit_orders)
 
 # cheap woman is Emily Randolph
 
@@ -325,8 +328,8 @@ cheap_woman <-
 
 # order placed at roughly same time as cheap woman...
 # similar garment with different color?
-#
 
+# find all items emily bought
 emilys_history <-
   orders |>
   filter(customerid == !!cheap_woman$customerid) |>
@@ -339,22 +342,73 @@ emilys_history <-
          without_color = str_remove(desc, "\\s\\([a-z]+\\)")) |>
   glimpse()
 
-possible_colored_item <-
+# items emily bought that have a color in the name
+emily_colored_purchases <-
   emilys_history |>
   filter(str_detect(desc, "\\([a-z]+\\)")) |>
   select(date, desc, without_color) |>
   glimpse()
 
-regx <- paste0(possible_colored_item$without_color, collapse = '|')
+# items names without color that target may have bought
+regx <- paste0(emily_colored_purchases$without_color, collapse = '|')
 
+# products that the guy might have bought
 candidate_products <-
   products |>
   collect() |>
-  filter(str_detect(desc, regx)) |>
-  view()
+  filter(str_detect(desc, regx),
+         str_detect(desc, '\\(.*?\\)')) |>
+  glimpse()
 
-
+# find all the orders on same day as emilys days
 orders |>
+  left_join(orders_items, by = "orderid") |>
   collect() |>
   mutate(date = as_date(ordered)) |>
-  left_join(orders_items)
+  filter(date %in% emily_colored_purchases$date,
+         sku %in% candidate_products$sku) |>
+  left_join(products |> collect()) |>
+  left_join(customers |>
+              mutate(customerid = as.character(customerid)) |>
+              collect()
+            ) |>
+  select(name, phone, ordered, desc) |>
+  print(n  = 200)
+
+# johnathan adams
+# 315-618-5263
+
+
+
+
+## Puzzle 8 ------------------------------------------------
+
+# gave it to my sister who lives in Manhattan
+#
+# owns an entire set of Noah’s collectibles!
+
+collectibles <-
+  products |>
+  collect() |>
+  filter(str_detect(desc, 'Noah')) |>
+  glimpse()
+
+most_collectibles <-
+  orders |>
+  left_join(orders_items, by = 'orderid') |>
+  filter(sku %in% !!collectibles$sku) |>
+  select(customerid, sku) |>
+  collect() |>
+  left_join(collectibles, by = 'sku') |>
+  group_by(customerid) |>
+  mutate(n = n()) |>
+  ungroup() |>
+  arrange(desc(n), customerid) |>
+  slice(1) |>
+  distinct(customerid) |>
+  pull()
+
+customers |>
+  filter(customerid == !!as.integer(most_collectibles)) |>
+  distinct() |>
+  glimpse()
